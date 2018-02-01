@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>M2 network map</title>
+    <link rel="stylesheet" href="https://openlayers.org/en/v4.6.4/css/ol.css" type="text/css">
+    <script src="https://openlayers.org/en/v4.6.4/build/ol.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@5/turf.min.js"></script>
+  </head>
+  <body>
+    <div id="map" class="map" style="width:1000px; height:500px"></div>
+    <script>
+      var map = new ol.Map({
+        layers: [
+          new ol.layer.Tile({
+            source: new ol.source.OSM()
+          })
+        ],
+        target: 'map',
+        view: new ol.View({
+          center: [0, 0],
+          zoom: 2
+        })
+      });
+
+      var style2 = new ol.style.Style({
+        stroke: new ol.style.Stroke({
+          color: [250, 250, 250, 1],
+          width: 2
+        })
+      });
+      var style = new ol.style.Style({
+        stroke: new ol.style.Stroke({
+          color: [30, 136, 229, 0.5],
+          width: 2
+        })
+      });
+
+      var flightsData = [
+        [
+          [8.5417, 47.3769], //Zurich
+          [151.2093, -33.8688], //Sydney
+
+        ],
+        [
+          [151.2093, -33.8688], //Sydney
+          [8.5417, 47.3769] //Zurich
+        ],
+        [
+          [8.5417, 47.3769], //Zurich
+          [-98.4936, 29.4241], //San Antonio
+          
+        ],
+        [
+          [-98.4936, 29.4241], //San Antonio
+          [8.5417, 47.3769] //Zurich
+        ],
+        [
+          [ 151.2093, -33.8688], //Sydney
+          [ 103.8198, 1.3521] //Sinagpore
+        ],
+        [
+          [ 0, 51],
+          [ 103.8198, 1.3521], //Sinagpore
+        ],
+        [
+          [ 12.5, 41.9], 
+          [ 139.6917, 35.6895], 
+        ],
+        [
+          [ 139.6917, 35.6895], 
+          [ 114.10, 22.3964], //Sinagpore
+
+        ],
+      ];
+
+      var toDraw = flightsData.length;
+      var addLater = function(feature, timeout) {
+        window.setTimeout(function() {
+          feature.set('start', new Date().getTime());
+          flightsSource.addFeature(feature);
+        }, timeout);
+      };
+
+      var pointsPerMs = 0.06;
+
+      var animateFlights = function(event) {
+        var vectorContext = event.vectorContext;
+          vectorContext.setStyle(style2);
+        var frameState = event.frameState;
+
+        var features = flightsSource.getFeatures();
+
+        for (var i = 0; i < features.length; i++) {
+
+          var feature = features[i];
+          if (!feature.get('finished')) {
+            // only draw the lines for which the animation has not finished yet
+            var coords = feature.getGeometry().getCoordinates();
+            var elapsedTime = frameState.time - feature.get('start');
+            var elapsedPoints = elapsedTime * pointsPerMs;
+
+            if (elapsedPoints >= coords.length) {
+              elapsedPoints = 0;
+              feature.set('start', new Date().getTime());
+              elapsedTime = 0;
+              //feature.set('finished', true);
+              //toDraw--;
+            }
+
+            var maxIndex = Math.min(elapsedPoints, coords.length);
+
+
+
+              var currentLine = new ol.geom.LineString(coords.slice(elapsedPoints, elapsedPoints+2));
+
+              // directly draw the line with the vector context
+              vectorContext.drawGeometry(currentLine);
+            
+          }
+        }
+        // tell OpenLayers to continue the animation
+        if(toDraw > 0){
+          map.render();
+        }
+
+      };
+
+      flightsSource = new ol.source.Vector({
+        wrapX: false,
+        loader: function() {
+
+            for (var i = 0; i < flightsData.length; i++) {
+              var flight = flightsData[i];
+              var from = flight[0];
+              var to = flight[1];
+              console.log(from);
+              console.log(to);
+
+
+
+              // create an arc circle between the two locations
+              var start = turf.point(from);
+              var end = turf.point(to);
+
+              var arcLine = turf.greatCircle(start, end, {});
+              console.log(from);
+
+                var line = new ol.geom.LineString(arcLine.geometry.coordinates);
+                line.transform(ol.proj.get('EPSG:4326'), ol.proj.get('EPSG:3857'));
+
+                var feature = new ol.Feature({
+                  geometry: line,
+                  finished: false
+                });
+                // add the feature with a delay so that the animation
+                // for all features does not start at the same time
+                addLater(feature, i * 50);
+
+
+                var feature = new ol.Feature({
+                  geometry: line,
+                  finished: true
+                });
+                addLater(feature, i * 50);
+
+            }
+            map.on('postcompose', animateFlights);
+        }
+      });
+
+      var flightsLayer = new ol.layer.Vector({
+        source: flightsSource,
+        style: function(feature) {
+          // if the animation is still active for a feature, do not
+          // render the feature with the layer style
+          if (feature.get('finished')) {
+            return style;
+          } else {
+            return null;
+          }
+        }
+      });
+
+
+        map.addLayer(flightsLayer);
+      
+
+    </script>
+  </body>
+</html>
